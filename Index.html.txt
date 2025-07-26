@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jawaker Partner Card Tracker</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 15px;
+      background: #f4f4f4;
+    }
+    h1 {
+      text-align: center;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(13, 1fr);
+      gap: 6px;
+      margin: 15px 0;
+    }
+    .suit-section {
+      margin-bottom: 10px;
+    }
+    .card {
+      padding: 6px;
+      background: white;
+      border: 1px solid #ccc;
+      text-align: center;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .played {
+      background: #d3d3d3;
+      text-decoration: line-through;
+    }
+    .void-grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .void-grid td, .void-grid th {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: center;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      margin-top: 10px;
+      resize: vertical;
+      font-family: monospace;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    @media (max-width: 600px) {
+      .card-grid {
+        grid-template-columns: repeat(7, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Jawaker Partner Card Tracker</h1>
+
+  <div id="deck">
+    <div class="suit-section"><strong>♠ Spades</strong></div>
+    <div class="card-grid" id="spades"></div>
+
+    <div class="suit-section"><strong>♥ Hearts</strong></div>
+    <div class="card-grid" id="hearts"></div>
+
+    <div class="suit-section"><strong>♦ Diamonds</strong></div>
+    <div class="card-grid" id="diamonds"></div>
+
+    <div class="suit-section"><strong>♣ Clubs</strong></div>
+    <div class="card-grid" id="clubs"></div>
+  </div>
+
+  <h2>Void Suit Tracker</h2>
+  <table class="void-grid">
+    <tr>
+      <th>Player</th><th>♠</th><th>♥</th><th>♦</th><th>♣</th>
+    </tr>
+    <tbody id="voidTable"></tbody>
+  </table>
+
+  <h2>Partner Notes</h2>
+  <textarea id="notes" placeholder="Write any strategy or partner notes here..."></textarea>
+
+  <button onclick="resetAll()">Reset Everything</button>
+
+  <script>
+    const suits = ['spades', 'hearts', 'diamonds', 'clubs'];
+    const symbols = {'spades':'♠', 'hearts':'♥', 'diamonds':'♦', 'clubs':'♣'};
+    const values = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+
+    function createCards() {
+      suits.forEach(suit => {
+        const container = document.getElementById(suit);
+        values.forEach(value => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerText = value + symbols[suit];
+          card.onclick = () => {
+            card.classList.toggle('played');
+            saveState();
+          };
+          container.appendChild(card);
+        });
+      });
+    }
+
+    function createVoidTracker() {
+      const players = ['You', 'Partner', 'Opponent 1', 'Opponent 2'];
+      const table = document.getElementById('voidTable');
+      players.forEach((player, idx) => {
+        const row = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        nameCell.innerText = player;
+        row.appendChild(nameCell);
+        suits.forEach(suit => {
+          const td = document.createElement('td');
+          const box = document.createElement('input');
+          box.type = 'checkbox';
+          box.dataset.player = idx;
+          box.dataset.suit = suit;
+          box.onchange = saveState;
+          td.appendChild(box);
+          row.appendChild(td);
+        });
+        table.appendChild(row);
+      });
+    }
+
+    function saveState() {
+      const cards = Array.from(document.querySelectorAll('.card')).map(c => c.classList.contains('played'));
+      const checkboxes = Array.from(document.querySelectorAll('input[type=checkbox]')).map(c => c.checked);
+      const notes = document.getElementById('notes').value;
+      localStorage.setItem('jawakerState', JSON.stringify({cards, checkboxes, notes}));
+    }
+
+    function loadState() {
+      const data = JSON.parse(localStorage.getItem('jawakerState'));
+      if (!data) return;
+      const cards = document.querySelectorAll('.card');
+      data.cards.forEach((played, i) => {
+        cards[i].classList.toggle('played', played);
+      });
+      const boxes = document.querySelectorAll('input[type=checkbox]');
+      data.checkboxes.forEach((checked, i) => {
+        boxes[i].checked = checked;
+      });
+      document.getElementById('notes').value = data.notes || '';
+    }
+
+    function resetAll() {
+      document.querySelectorAll('.card').forEach(c => c.classList.remove('played'));
+      document.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = false);
+      document.getElementById('notes').value = '';
+      localStorage.removeItem('jawakerState');
+    }
+
+    createCards();
+    createVoidTracker();
+    loadState();
+  </script>
+</body>
+</html>
