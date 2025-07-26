@@ -1,106 +1,239 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Complex Partner Monte Carlo Bot</title>
-<style>
-  body { font-family: Arial; padding: 10px; max-width: 600px; margin: auto; }
-  textarea { width: 100%; height: 100px; font-family: monospace; }
-  button { margin-top: 10px; padding: 8px 12px; font-size:16px; cursor: pointer; }
-  #handSelector div { margin-bottom: 8px; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jawaker Complex Partner Card Counter</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f0f0f0; }
+        .player { margin: 20px; padding: 10px; border: 1px solid #ccc; }
+        .card { display: inline-block; width: 50px; height: 70px; border: 1px solid #000; margin: 2px; cursor: pointer; background-color: white; }
+        .played { background-color: #ddd; text-decoration: line-through; }
+        #suit-counter { margin: 20px; font-size: 18px; }
+        #suggestions { margin: 20px; }
+        #current-trick { margin: 20px; }
+    </style>
 </head>
 <body>
+    <h1>Jawaker Complex Partner Card Counter</h1>
+    <div id="partner" class="player">
+        <h2>Partner (Top)</h2>
+        <div id="partner-cards"></div>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <div id="player-left" class="player">
+            <h2>Player L (Left)</h2>
+            <div id="player-left-cards"></div>
+        </div>
+        <div id="player-right" class="player">
+            <h2>Player R (Right)</h2>
+            <div id="player-right-cards"></div>
+        </div>
+    </div>
+    <div id="me" class="player">
+        <h2>Me (Bottom)</h2>
+        <div id="me-cards"></div>
+    </div>
+    <div id="current-trick">
+        <h3>Current Trick</h3>
+        <p id="trick-display">No cards played yet</p>
+    </div>
+    <div id="suit-counter">
+        <h3>Suit Counter</h3>
+        <p>Spades: <span id="spades-count">0</span> | Hearts: <span id="hearts-count">0</span> | 
+           Clubs: <span id="clubs-count">0</span> | Diamonds: <span id="diamonds-count">0</span></p>
+    </div>
+    <div id="suggestions">
+        <h3>AI Move Suggestion</h3>
+        <p id="suggestion-text">Click a card to play or wait for opponents.</p>
+        <button onclick="suggestMove()">Suggest Move</button>
+    </div>
 
-<h2>Complex Partner Monte Carlo Bot</h2>
+    <script>
+        const suits = ['Spades', 'Hearts', 'Clubs', 'Diamonds'];
+        const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        const cards = suits.flatMap(suit => ranks.map(rank => `${rank} of ${suit}`));
+        let players = {
+            me: [...cards].slice(0, 13),
+            partner: [...cards].slice(13, 26),
+            left: [...cards].slice(26, 39),
+            right: [...cards].slice(39, 52)
+        };
+        let playedCards = [];
+        let currentTrick = [];
+        let turnOrder = ['left', 'me', 'right', 'partner'];
+        let currentTurnIndex = 0;
+        let suitCounts = { Spades: 0, Hearts: 0, Clubs: 0, Diamonds: 0 };
 
-<label>Your hand (13 cards, space-separated):</label>
-<textarea id="yourHand" placeholder="e.g. A♠ K♠ Q♠ ..."></textarea>
+        function renderCards() {
+            for (let player in players) {
+                let container = document.getElementById(`${player}-cards`);
+                container.innerHTML = '';
+                players[player].forEach(card => {
+                    let cardDiv = document.createElement('div');
+                    cardDiv.className = 'card';
+                    cardDiv.textContent = card;
+                    cardDiv.onclick = () => selectCard(player, card);
+                    container.appendChild(cardDiv);
+                });
+            }
+            updateSuitCounter();
+            updateTrickDisplay();
+        }
 
-<label>Played cards so far (space-separated):</label>
-<textarea id="playedHistory" placeholder="e.g. 10♠ 2♥ ..."></textarea>
+        function selectCard(player, card) {
+            if (player !== turnOrder[currentTurnIndex] && player !== 'me') return;
+            if (!isValidPlay(player, card)) return;
 
-<button id="suggestBtn">Suggest Move</button>
+            players[player] = players[player].filter(c => c !== card);
+            playedCards.push(card);
+            currentTrick.push({ player, card });
+            let suit = card.split(' of ')[1];
+            suitCounts[suit]++;
+            currentTurnIndex = (currentTurnIndex + 1) % 4;
 
-<div id="suggestion"></div>
+            if (currentTrick.length === 4) {
+                evaluateTrick();
+                currentTrick = [];
+                currentTurnIndex = turnOrder.indexOf(determineTrickWinner());
+            }
 
-<script>
-// === PARAMETERS ===
-const ranks = ['A','K','Q','J','10','9','8','7','6','5','4','3','2'];
-const suits = ['♠','♥','♦','♣'];
-const allCards = ranks.flatMap(r => suits.map(s => r + s));
+            renderCards();
+            if (turnOrder[currentTurnIndex] === 'me') {
+                suggestMove();
+            } else {
+                document.getElementById('suggestion-text').textContent = `Waiting for ${turnOrder[currentTurnIndex]}'s turn.`;
+            }
+        }
 
-// === Input Parsing ===
-function parseList(txt) {
-  return txt.trim().split(/\s+/).filter(c => allCards.includes(c));
-}
+        function isValidPlay(player, card) {
+            if (currentTrick.length === 0) return true;
+            let leadSuit = currentTrick[0].card.split(' of ')[1];
+            let playerCards = players[player];
+            let hasLeadSuit = playerCards.some(c => c.includes(leadSuit));
+            if (hasLeadSuit && !card.includes(leadSuit)) return false;
+            return true;
+        }
 
-// === Monte Carlo Sim ===
-function suggestMove(yourHand, playedCards, simulations=500) {
-  const unseen = allCards.filter(c => !playedCards.includes(c) && !yourHand.includes(c));
-  const results = {}; yourHand.forEach(c => results[c] = 0);
+        function updateSuitCounter() {
+            for (let suit in suitCounts) {
+                document.getElementById(`${suit.toLowerCase()}-count`).textContent = suitCounts[suit];
+            }
+        }
 
-  for (let i = 0; i < simulations; i++) {
-    const world = shuffle(unseen.slice());
-    // assign world: partner, left, right (13 each minus played placeholders)
-    const deals = { you: yourHand.slice(), partner: [], left: [], right: [] };
-    const slots = ['partner','left','right'];
-    world.forEach((c, idx) => {
-      const player = slots[Math.floor(idx / 13)];
-      deals[player].push(c);
-    });
+        function updateTrickDisplay() {
+            let trickText = currentTrick.map(t => `${t.player}: ${t.card}`).join(' | ');
+            document.getElementById('trick-display').textContent = trickText || 'No cards played yet';
+        }
 
-    yourHand.forEach(card => {
-      const simScore = playSimulation(card, deals);
-      results[card] += simScore;
-    });
-  }
+        function evaluateTrick() {
+            let leadSuit = currentTrick[0].card.split(' of ')[1];
+            let highestCard = currentTrick[0];
+            let highestRank = ranks.indexOf(highestCard.card.split(' of ')[0]);
 
-  // average results and pick highest
-  const avg = {};
-  yourHand.forEach(card => avg[card] = results[card] / simulations);
-  const best = yourHand.reduce((a, b) => avg[a] > avg[b] ? a : b);
-  return { best, avg };
-}
+            for (let i = 1; i < currentTrick.length; i++) {
+                let card = corrienteTrick[i].card;
+                let suit = card.split(' of ')[1];
+                let rank = ranks.indexOf(card.split(' of ')[0]);
+                if (suit === leadSuit && rank > highestRank) {
+                    highestCard = currentTrick[i];
+                    highestRank = rank;
+                }
+            }
+            document.getElementById('suggestion-text').textContent = `${highestCard.player} wins the trick!`;
+        }
 
-// === Simulation of full-hand play (very simplified) ===
-function playSimulation(startCard, deals) {
-  // In this minimal version we return a score: 1 if you/partner have startCard as highest in suit
-  const suit = startCard.slice(-1);
-  const us = [startCard].concat(deals.partner);
-  const others = deals.left.concat(deals.right);
-  const usRank = Math.max(...us.map(c => ranks.indexOf(c.slice(0,-1))));
-  const bestOther = Math.max(...others.filter(c => c.slice(-1) === suit)
-    .map(c => ranks.indexOf(c.slice(0,-1))));
-  return usRank > bestOther ? 1 : 0;
-}
+        function determineTrickWinner() {
+            let leadSuit = currentTrick[0].card.split(' of ')[1];
+            let highestCard = currentTrick[0];
+            let highestRank = ranks.indexOf(highestCard.card.split(' of ')[0]);
 
-// === Utility shuffle ===
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
-}
+            for (let i = 1; i < currentTrick.length; i++) {
+                let card = currentTrick[i].card;
+                let suit = card.split(' of ')[1];
+                let rank = ranks.indexOf(card.split(' of ')[0]);
+                if (suit === leadSuit && rank > highestRank) {
+                    highestCard = currentTrick[i];
+                    highestRank = rank;
+                }
+            }
+            return highestCard.player;
+        }
 
-// === Button Click ===
-document.getElementById('suggestBtn').onclick = () => {
-  const yourHand = parseList(document.getElementById('yourHand').value);
-  const playedHistory = parseList(document.getElementById('playedHistory').value);
-  if (yourHand.length !== 13) {
-    alert('Please enter exactly 13 cards in your hand.');
-    return;
-  }
-  const { best, avg } = suggestMove(yourHand, playedHistory, 800);
-  let html = `<h3>Best Move: ${best}</h3><ul>`;
-  Object.entries(avg).forEach(([c, v]) => {
-    html += `<li>${c}: ${v.toFixed(3)}</li>`;
-  });
-  html += '</ul>';
-  document.getElementById('suggestion').innerHTML = html;
-};
-</script>
+        function suggestMove() {
+            if (turnOrder[currentTurnIndex] !== 'me') {
+                document.getElementById('suggestion-text').textContent = `Not your turn. Waiting for ${turnOrder[currentTurnIndex]}.`;
+                return;
+            }
 
+            let bestCard = monteCarloSuggestion();
+            document.getElementById('suggestion-text').textContent = `Suggested move: ${bestCard}`;
+        }
+
+        function monteCarloSuggestion() {
+            let myCards = players.me;
+            let leadSuit = currentTrick.length > 0 ? currentTrick[0].card.split(' of ')[1] : null;
+            let validCards = leadSuit ? myCards.filter(c => c.includes(leadSuit)) : myCards;
+            if (validCards.length === 0) validCards = myCards;
+
+            let simulations = 100;
+            let bestCard = validCards[0];
+            let bestScore = -Infinity;
+
+            validCards.forEach(card => {
+                let score = 0;
+                for (let i = 0; i < simulations; i++) {
+                    score += simulateTrickOutcome(card);
+                }
+                score /= simulations;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestCard = card;
+                }
+            });
+
+            return bestCard;
+        }
+
+        function simulateTrickOutcome(card) {
+            let score = 0;
+            let trick = [...currentTrick, { player: 'me', card }];
+            let leadSuit = trick[0].card.split(' of ')[1];
+
+            // Simulate remaining players' moves
+            for (let i = trick.length; i < 4; i++) {
+                let player = turnOrder[(currentTurnIndex + i - trick.length) % 4];
+                let playerCards = players[player];
+                let validCards = leadSuit ? playerCards.filter(c => c.includes(leadSuit)) : playerCards;
+                if (validCards.length === 0) validCards = playerCards;
+                let randomCard = validCards[Math.floor(Math.random() * validCards.length)];
+                trick.push({ player, card: randomCard });
+            }
+
+            // Evaluate trick
+            let highestCard = trick[0];
+            let highestRank = ranks.indexOf(highestCard.card.split(' of ')[0]);
+            for (let i = 1; i < trick.length; i++) {
+                let card = trick[i].card;
+                let suit = card.split(' of ')[1];
+                let rank = ranks.indexOf(card.split(' of ')[0]);
+                if (suit === leadSuit && rank > highestRank) {
+                    highestCard = trick[i];
+                    highestRank = rank;
+                }
+            }
+
+            // Score: +1 if me or partner wins, -1 otherwise
+            if (highestCard.player === 'me' || highestCard.player === 'partner') {
+                score += 1;
+            } else {
+                score -= 1;
+            }
+
+            return score;
+        }
+
+        renderCards();
+    </script>
 </body>
 </html>
