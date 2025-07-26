@@ -11,6 +11,7 @@
     background: #f0f0f0;
     display: flex; justify-content: center; align-items: center;
     height: 100vh;
+    flex-direction: column;
   }
   .table {
     position: relative;
@@ -80,51 +81,39 @@
     cursor: default;
     transform: scale(0.9);
   }
-  .card-slot .card-face {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    right: 3px;
-    bottom: 3px;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    border-radius: 5px;
-    display: none;
-  }
-  .card-slot.assigned .card-face {
-    display: block;
+  .card-slot.assigned {
+    background: none;
   }
 
-  /* Card face images as Unicode + color */
-  .card-text {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    font-size: 14px;
+  /* Card face text */
+  .card-slot.assigned {
     font-weight: bold;
+    font-size: 18px;
+    text-align: center;
+    line-height: 56px;
     user-select: none;
   }
   .red {
     color: red;
   }
 
-  /* Suit counters */
+  /* Universal Suit counter */
   .suit-counter {
-    margin-top: 8px;
-    width: 100%;
+    margin-top: 12px;
+    width: 90vw;
+    max-width: 680px;
     display: flex;
     justify-content: space-around;
     font-weight: bold;
-    font-size: 14px;
+    font-size: 18px;
+    background: #eee;
+    border-radius: 8px;
+    padding: 8px 0;
+    box-shadow: inset 0 0 5px #bbb;
   }
   .suit-counter div {
-    background: #eee;
-    border-radius: 5px;
-    padding: 3px 6px;
-    min-width: 38px;
+    min-width: 48px;
     text-align: center;
-    box-shadow: inset 0 0 3px #bbb;
   }
 
   /* Modal styles */
@@ -216,6 +205,9 @@
   </div>
 </div>
 
+<!-- Universal suit counter -->
+<div id="global-suit-counter" class="suit-counter"></div>
+
 <!-- Modal for card picker -->
 <div id="cardPickerModal">
   <div id="cardPickerContent">
@@ -253,11 +245,6 @@
         slot.addEventListener('click', () => onCardSlotClick(slot));
         container.appendChild(slot);
       }
-      // Add suit counter container below
-      let suitCounter = document.createElement('div');
-      suitCounter.className = 'suit-counter';
-      suitCounter.id = playerId + '-suit-counter';
-      container.appendChild(suitCounter);
     });
   }
 
@@ -322,86 +309,89 @@
       } else {
         cardDiv.addEventListener('click', () => {
           assignCardToSlot(card);
-          closeModal();
+          closeCardPicker();
         });
       }
-
       cardGrid.appendChild(cardDiv);
     });
   }
 
-  function closeModal() {
+  function closeCardPicker() {
     modal.style.display = 'none';
     currentSlot = null;
   }
 
-  closePickerBtn.addEventListener('click', () => {
-    closeModal();
-  });
+  closePickerBtn.addEventListener('click', closeCardPicker);
 
-  // Assign selected card to current slot, update assignedCards map
   function assignCardToSlot(card) {
     if(!currentSlot) return;
     const {playerId, index} = currentSlot;
 
-    // If slot previously had a card, free it
-    const oldCard = playerHands[playerId][index];
-    if(oldCard) {
-      assignedCards.delete(oldCard.rank + oldCard.suit);
+    // Remove previous assignment for this slot if exists
+    const prevCard = playerHands[playerId][index];
+    if(prevCard) {
+      assignedCards.delete(prevCard.rank + prevCard.suit);
     }
 
-    // Assign new card (played=false by default)
+    // Assign new card
     playerHands[playerId][index] = {...card, played:false};
     assignedCards.set(card.str, {playerId, index});
+
     updateUI();
   }
 
-  // Update UI after any change
+  // Update the UI after any change
   function updateUI() {
     players.forEach(playerId => {
       const container = document.getElementById(playerId);
-      const slots = [...container.querySelectorAll('.card-slot')];
+      const slots = container.querySelectorAll('.card-slot');
       slots.forEach(slot => {
         const idx = +slot.dataset.index;
-        const cardData = playerHands[playerId][idx];
-        slot.classList.remove('assigned','played');
-        slot.textContent = '';
-        slot.style.backgroundImage = "url('https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Card_back_01.svg/48px-Card_back_01.svg.png')";
-        slot.title = "Tap to assign card";
-
-        if(cardData) {
+        const card = playerHands[playerId][idx];
+        if(card) {
           slot.classList.add('assigned');
-          slot.textContent = cardData.str;
+          slot.textContent = card.str;
+          slot.classList.toggle('red', card.suit === '♥' || card.suit === '♦');
+          slot.classList.toggle('played', card.played);
           slot.style.backgroundImage = 'none';
-          slot.title = cardData.str + (cardData.played ? " (Played - click to unmark)" : " (Tap to mark played)");
-
-          if(cardData.played) slot.classList.add('played');
+          slot.title = card.played ? 'Card played (tap to unmark)' : 'Card assigned (tap to mark played)';
+        } else {
+          slot.classList.remove('assigned', 'played', 'red');
+          slot.textContent = '';
+          slot.style.backgroundImage = "url('https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Card_back_01.svg/48px-Card_back_01.svg.png')";
+          slot.title = "Tap to assign card";
         }
       });
     });
-    updateSuitCounters();
+
+    updateUniversalSuitCounter();
   }
 
-  // Update suit counters below each player
-  function updateSuitCounters() {
+  // Update the universal suit counter display
+  function updateUniversalSuitCounter() {
+    const suitCount = { '♠':0, '♥':0, '♦':0, '♣':0 };
     players.forEach(playerId => {
-      const counts = {'♠':0,'♥':0,'♦':0,'♣':0};
       playerHands[playerId].forEach(card => {
-        if(card && !card.played) counts[card.suit]++;
+        if(card && !card.played) {
+          suitCount[card.suit]++;
+        }
       });
-      const counterDiv = document.getElementById(playerId + '-suit-counter');
-      counterDiv.innerHTML = `
-        <div>♠ ${counts['♠']}</div>
-        <div class="red">♥ ${counts['♥']}</div>
-        <div class="red">♦ ${counts['♦']}</div>
-        <div>♣ ${counts['♣']}</div>
-      `;
+    });
+
+    const container = document.getElementById('global-suit-counter');
+    container.innerHTML = '';
+    suits.forEach(suit => {
+      const div = document.createElement('div');
+      div.textContent = `${suit} : ${suitCount[suit]}`;
+      if(suit === '♥' || suit === '♦') div.style.color = 'red';
+      container.appendChild(div);
     });
   }
 
-  // Init app
+  // Initialize app
   createCardSlots();
-  updateUI
-  </script>
+  updateUI();
+</script>
+
 </body>
 </html>
